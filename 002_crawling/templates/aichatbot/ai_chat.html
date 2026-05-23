@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NAVER AI Chat — Gemini 2.5 Flash</title>
+
+  <!-- TailwindCSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- SweetAlert2 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+
+  <!-- Axios -->
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.7/dist/axios.min.js"></script>
+
+  <!-- Marked.js (Markdown) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+
+  <!-- Noto Sans KR -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            naver:       '#03C75A',
+            'naver-d':   '#02A34A',
+            'naver-bg':  '#E8F9EE',
+          },
+          fontFamily: {
+            sans: ['Noto Sans KR', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* ─── Base ────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: 'Noto Sans KR', sans-serif; overflow: hidden; }
+
+    /* ─── Scrollbar ───────────────────────────── */
+    .custom-scroll::-webkit-scrollbar { width: 5px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
+    .custom-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+    /* ─── Sidebar slide ──────────────────────── */
+    #sidebar { transition: transform .28s cubic-bezier(.4,0,.2,1); }
+
+    /* ─── Typing dots ──────────────────────── */
+    @keyframes dotBounce {
+      0%,80%,100% { transform:translateY(0);  opacity:.4; }
+      40%          { transform:translateY(-5px); opacity:1; }
+    }
+    .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#03C75A; animation:dotBounce 1.3s infinite; }
+    .dot:nth-child(2){ animation-delay:.18s; }
+    .dot:nth-child(3){ animation-delay:.36s; }
+
+    /* ─── Message fade-in ───────────────────── */
+    @keyframes msgIn {
+      from { opacity:0; transform:translateY(6px); }
+      to   { opacity:1; transform:translateY(0);   }
+    }
+    .msg-in { animation: msgIn .35s ease; }
+
+    /* ─── Markdown inside AI bubble ─────────── */
+    .md p           { margin-bottom:.6rem; line-height:1.75; }
+    .md p:last-child{ margin-bottom:0; }
+    .md ul,.md ol   { margin:.35rem 0 .6rem 1.3rem; }
+    .md li          { margin-bottom:.2rem; }
+    .md h1,.md h2,.md h3 { font-weight:700; margin:.6rem 0 .35rem; line-height:1.3; }
+    .md h1 { font-size:1.25rem; }
+    .md h2 { font-size:1.1rem; }
+    .md h3 { font-size:1rem; }
+    .md code {
+      background:#f0f4f8; color:#be185d;
+      padding:1px 5px; border-radius:4px;
+      font-family:ui-monospace,'Cascadia Code',monospace; font-size:.82em;
+    }
+    .md pre {
+      background:#1e293b; color:#e2e8f0;
+      border-radius:10px; padding:1rem; overflow-x:auto; margin:.5rem 0;
+    }
+    .md pre code { background:transparent; color:inherit; padding:0; font-size:.84rem; }
+    .md blockquote {
+      border-left:3px solid #03C75A; margin:.4rem 0;
+      padding-left:.8rem; color:#64748b;
+    }
+    .md table    { width:100%; border-collapse:collapse; margin:.5rem 0; font-size:.88rem; }
+    .md th,.md td{ border:1px solid #e5e7eb; padding:.35rem .7rem; text-align:left; }
+    .md th       { background:#f8fafc; font-weight:600; }
+    .md a        { color:#03C75A; text-decoration:underline; }
+    .md hr       { border:none; border-top:1px solid #e5e7eb; margin:.75rem 0; }
+
+    /* ─── Textarea auto-resize ──────────────── */
+    #user-input { resize:none; min-height:44px; max-height:180px; overflow-y:auto; }
+
+    /* ─── Conv item hover ──────────────────── */
+    .conv-item       { transition:background .15s; }
+    .conv-item:hover { background:#f3f4f6; }
+    .conv-item.active { background:#E8F9EE; }
+    .conv-item .del-btn { opacity:0; transition:opacity .15s; }
+    .conv-item:hover .del-btn { opacity:1; }
+
+    /* ─── Suggestion card ──────────────────── */
+    .suggest-card { transition: border-color .2s, background .2s, transform .15s; }
+    .suggest-card:hover { border-color:#03C75A; background:#f0fdf6; transform:translateY(-1px); }
+
+    /* ─── Copy btn ─────────────────────────── */
+    .copy-btn { opacity:0; transition:opacity .2s; }
+    .msg-group:hover .copy-btn { opacity:1; }
+
+    /* ─── Naver header gradient bar ─────────── */
+    .naver-bar {
+      background: linear-gradient(135deg, #03C75A 0%, #02a94c 60%, #019940 100%);
+    }
+
+    /* ─── SweetAlert custom ─────────────────── */
+    .swal2-confirm { background:#03C75A !important; }
+  </style>
+</head>
+
+<body class="bg-gray-100 text-gray-800 h-screen">
+
+<!-- ══════════════════════════════════════
+     Mobile overlay
+══════════════════════════════════════ -->
+<div id="overlay"
+     class="fixed inset-0 bg-black/40 z-20 hidden md:hidden"
+     onclick="closeSidebar()"></div>
+
+<!-- ══════════════════════════════════════
+     LAYOUT  (sidebar + main)
+══════════════════════════════════════ -->
+<div class="flex h-screen overflow-hidden">
+
+  <!-- ┌───────────────────────────────────
+       │  SIDEBAR
+       └─────────────────────────────────── -->
+  <aside id="sidebar"
+         class="fixed md:static top-0 left-0 h-full w-64 bg-white border-r border-gray-200
+                flex flex-col z-30 -translate-x-full md:translate-x-0 shrink-0 shadow-lg md:shadow-none">
+
+    <!-- Logo bar -->
+    <div class="naver-bar px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+          <path d="M13.5 3H10.5L3 21h3.5l1.7-4.3h9.6L19.5 21H23L13.5 3zM9.4 13.7l2.6-6.5 2.6 6.5H9.4z"/>
+        </svg>
+        <span class="text-white font-bold text-lg tracking-tight">NAVER AI</span>
+      </div>
+      <button onclick="closeSidebar()" class="md:hidden text-white/80 hover:text-white">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- New chat -->
+    <div class="p-3 border-b border-gray-100">
+      <button onclick="newChat()"
+              class="w-full flex items-center justify-center gap-2 bg-naver hover:bg-naver-d text-white
+                     rounded-lg px-4 py-2.5 font-medium text-sm transition-colors shadow-sm">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.8"
+             viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        새 대화 시작
+      </button>
+    </div>
+
+    <!-- Conversation list -->
+    <div class="px-3 pt-3 pb-1">
+      <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">최근 대화</p>
+    </div>
+    <div id="conv-list" class="flex-1 overflow-y-auto custom-scroll px-2 pb-2 space-y-0.5">
+      <!-- dynamic -->
+    </div>
+
+    <!-- Bottom actions -->
+    <div class="border-t border-gray-200 p-2.5 space-y-0.5 bg-gray-50">
+      <button onclick="showApiKeyModal()"
+              class="w-full flex items-center gap-2.5 text-gray-600 hover:bg-gray-200 rounded-lg
+                     px-3 py-2 text-sm transition-colors text-left">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+             viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        API 키 설정
+      </button>
+      <button onclick="showSettings()"
+              class="w-full flex items-center gap-2.5 text-gray-600 hover:bg-gray-200 rounded-lg
+                     px-3 py-2 text-sm transition-colors text-left">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+             viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+        설정
+      </button>
+      <button onclick="confirmClearAll()"
+              class="w-full flex items-center gap-2.5 text-gray-500 hover:bg-red-50 hover:text-red-500
+                     rounded-lg px-3 py-2 text-sm transition-colors text-left">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"
+             viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+        </svg>
+        전체 대화 삭제
+      </button>
+    </div>
+  </aside><!-- /sidebar -->
+
+
+  <!-- ┌───────────────────────────────────
+       │  MAIN CONTENT
+       └─────────────────────────────────── -->
+  <div class="flex-1 flex flex-col min-w-0 h-screen">
+
+    <!-- Top header -->
+    <header class="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 shrink-0 shadow-sm">
+      <!-- Mobile hamburger -->
+      <button onclick="openSidebar()"
+              class="md:hidden p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-600">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+
+      <!-- AI avatar + title -->
+      <div class="flex items-center gap-2.5 flex-1 min-w-0">
+        <div class="relative shrink-0">
+          <div class="w-9 h-9 naver-bar rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-sm">
+            AI
+          </div>
+          <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></span>
+        </div>
+        <div class="min-w-0">
+          <p id="chat-title" class="font-semibold text-sm text-gray-800 truncate">새 대화</p>
+          <p class="text-[11px] text-gray-400">Gemini 2.5 Flash · <span id="msg-count">0</span>개 메시지</p>
+        </div>
+      </div>
+
+      <!-- API status + new chat btn -->
+      <div class="flex items-center gap-2 shrink-0">
+        <span id="api-badge"
+              class="hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer
+                     bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 transition"
+              onclick="showApiKeyModal()">
+          🔑 키 미설정
+        </span>
+        <button onclick="newChat()"
+                class="hidden sm:flex items-center gap-1.5 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200
+                       rounded-lg px-3 py-1.5 font-medium transition-colors">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.8" viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          새 대화
+        </button>
+        <button onclick="exportChat()"
+                title="대화 내보내기"
+                class="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500">
+          <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </button>
+      </div>
+    </header><!-- /header -->
+
+
+    <!-- ── MESSAGES ─────────────────────────── -->
+    <div id="messages-wrap" class="flex-1 overflow-y-auto custom-scroll bg-gray-50">
+
+      <!-- Welcome screen -->
+      <div id="welcome-screen" class="flex flex-col items-center justify-center h-full py-12 px-5 text-center">
+        <div class="w-20 h-20 naver-bar rounded-3xl flex items-center justify-center shadow-lg mb-5">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="white">
+            <path d="M13.5 3H10.5L3 21h3.5l1.7-4.3h9.6L19.5 21H23L13.5 3zM9.4 13.7l2.6-6.5 2.6 6.5H9.4z"/>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">NAVER AI Chat</h1>
+        <p class="text-gray-500 text-sm max-w-xs mb-1">Gemini 2.5 Flash 기반 AI 챗봇</p>
+        <p class="text-gray-400 text-xs mb-8">무엇이든 물어보세요. 정확하고 빠르게 답변해드립니다.</p>
+
+        <!-- Suggestions -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg w-full text-left">
+          <button onclick="sendSuggestion('Python으로 피보나치 수열을 구하는 코드를 작성해줘')"
+                  class="suggest-card bg-white rounded-xl border border-gray-200 p-3.5 text-sm text-gray-700 shadow-sm">
+            <div class="text-base mb-1">💻</div>
+            <div class="font-medium mb-0.5">코드 작성 도움</div>
+            <div class="text-xs text-gray-400">Python 피보나치 수열 코드</div>
+          </button>
+          <button onclick="sendSuggestion('자기소개서 잘 쓰는 방법을 단계별로 알려줘')"
+                  class="suggest-card bg-white rounded-xl border border-gray-200 p-3.5 text-sm text-gray-700 shadow-sm">
+            <div class="text-base mb-1">📝</div>
+            <div class="font-medium mb-0.5">자기소개서 작성</div>
+            <div class="text-xs text-gray-400">단계별 작성 가이드 요청</div>
+          </button>
+          <button onclick="sendSuggestion('인공지능의 역사와 주요 발전 과정을 설명해줘')"
+                  class="suggest-card bg-white rounded-xl border border-gray-200 p-3.5 text-sm text-gray-700 shadow-sm">
+            <div class="text-base mb-1">🤖</div>
+            <div class="font-medium mb-0.5">AI 역사 알아보기</div>
+            <div class="text-xs text-gray-400">인공지능의 발전 과정 설명</div>
+          </button>
+          <button onclick="sendSuggestion('\'I have a dream\'을 한국어로 번역하고 맥락을 설명해줘')"
+                  class="suggest-card bg-white rounded-xl border border-gray-200 p-3.5 text-sm text-gray-700 shadow-sm">
+            <div class="text-base mb-1">🌐</div>
+            <div class="font-medium mb-0.5">번역 및 해설</div>
+            <div class="text-xs text-gray-400">영어 문장 번역 + 맥락 설명</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Message list -->
+      <div id="msg-list" class="hidden max-w-3xl mx-auto px-4 py-6 space-y-5">
+      </div>
+
+    </div><!-- /messages-wrap -->
+
+
+    <!-- ── INPUT AREA ──────────────────────── -->
+    <div class="bg-white border-t border-gray-200 px-4 py-3 shrink-0">
+      <div class="max-w-3xl mx-auto">
+        <div id="input-box"
+             class="flex items-end gap-2 bg-gray-50 border border-gray-300 rounded-2xl
+                    px-4 py-3 transition-all duration-200
+                    focus-within:border-naver focus-within:bg-white focus-within:shadow-[0_0_0_3px_rgba(3,199,90,0.12)]">
+          <!-- Attach / extra actions -->
+          <button title="파일 첨부 (준비 중)" disabled
+                  class="text-gray-300 cursor-not-allowed mb-0.5 shrink-0">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+
+          <textarea
+            id="user-input"
+            rows="1"
+            placeholder="메시지를 입력하세요…  (Enter: 전송, Shift+Enter: 줄바꿈)"
+            class="flex-1 bg-transparent outline-none text-sm text-gray-800 placeholder-gray-400
+                   leading-relaxed py-0.5"
+          ></textarea>
+
+          <!-- Character count -->
+          <span id="char-count" class="text-xs text-gray-300 mb-0.5 shrink-0 self-end hidden sm:block">0</span>
+
+          <!-- Send button -->
+          <button id="send-btn" onclick="sendMessage()"
+                  class="shrink-0 w-9 h-9 naver-bar rounded-xl flex items-center justify-center
+                         text-white transition-all hover:shadow-md hover:scale-105 disabled:opacity-40
+                         disabled:cursor-not-allowed disabled:scale-100 disabled:shadow-none">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"
+                 viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+
+        <p class="text-[11px] text-gray-400 text-center mt-2">
+          NAVER AI Chat은 실수를 할 수 있습니다. 중요한 정보는 반드시 검토하세요.
+        </p>
+      </div>
+    </div><!-- /input area -->
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+
+<!-- ══════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════ -->
+<script>
+/* ─── CONFIG ───────────────────────────────── */
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_ENDPOINT = key =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+
+/* ─── STATE ────────────────────────────────── */
+let apiKey        = localStorage.getItem('gemini_api_key') || '';
+let conversations = JSON.parse(localStorage.getItem('naver_convs') || '[]');
+let currentId     = null;
+let history       = [];      // [{role:'user'|'model', parts:[{text:''}]}]
+let isLoading     = false;
+let settings      = JSON.parse(localStorage.getItem('naver_settings') || '{"temp":0.9,"maxTokens":2048}');
+
+/* ─── INIT ─────────────────────────────────── */
+window.onload = () => {
+  marked.setOptions({ breaks: true, gfm: true });
+  setupTextarea();
+  updateApiBadge();
+  renderConvList();
+  if (!apiKey) setTimeout(showApiKeyModal, 700);
+};
+
+/* ─── TEXTAREA ─────────────────────────────── */
+function setupTextarea() {
+  const ta = document.getElementById('user-input');
+  const cc = document.getElementById('char-count');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 180) + 'px';
+    cc.textContent = ta.value.length;
+    cc.classList.toggle('hidden', ta.value.length === 0);
+  });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+}
+
+/* ─── SIDEBAR ──────────────────────────────── */
+function openSidebar() {
+  document.getElementById('sidebar').classList.remove('-translate-x-full');
+  document.getElementById('overlay').classList.remove('hidden');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.add('-translate-x-full');
+  document.getElementById('overlay').classList.add('hidden');
+}
+
+/* ─── API KEY ──────────────────────────────── */
+function updateApiBadge() {
+  const el = document.getElementById('api-badge');
+  if (apiKey) {
+    el.innerHTML = '✓ API 키 설정됨';
+    el.className = el.className
+      .replace('bg-red-50 text-red-500 border-red-200 hover:bg-red-100','')
+      + ' bg-green-50 text-naver border border-green-200 hover:bg-green-100';
+    el.className = 'hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 transition';
+  } else {
+    el.className = 'hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 transition';
+    el.innerHTML = '🔑 키 미설정';
+  }
+}
+
+async function showApiKeyModal() {
+  const { value } = await Swal.fire({
+    title: '<strong>Gemini API 키 설정</strong>',
+    html: `
+      <div style="text-align:left">
+        <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:#03C75A">Google AI Studio</a>에서 무료 API 키를 발급받으세요.
+        </p>
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px">API 키</label>
+        <input id="swal-key" type="password" class="swal2-input" placeholder="AIza..."
+               value="${apiKey}" style="margin:0;width:100%">
+        <p style="font-size:11px;color:#9ca3af;margin-top:8px">
+          🔒 API 키는 브라우저 로컬 스토리지에만 저장됩니다.
+        </p>
+      </div>`,
+    confirmButtonText: '저장',
+    showCancelButton: true,
+    cancelButtonText: '취소',
+    focusConfirm: false,
+    preConfirm: () => {
+      const v = document.getElementById('swal-key').value.trim();
+      if (!v) { Swal.showValidationMessage('API 키를 입력해주세요.'); return false; }
+      return v;
+    }
+  });
+  if (value) {
+    apiKey = value;
+    localStorage.setItem('gemini_api_key', apiKey);
+    updateApiBadge();
+    toast('API 키가 저장되었습니다.', 'success');
+  }
+}
+
+/* ─── SETTINGS ─────────────────────────────── */
+async function showSettings() {
+  const { value } = await Swal.fire({
+    title: '⚙️ 대화 설정',
+    html: `
+      <div style="text-align:left;font-size:13px">
+        <label style="font-weight:600;color:#374151;display:block;margin-bottom:4px">
+          창의성 (Temperature): <span id="temp-val">${settings.temp}</span>
+        </label>
+        <input type="range" id="swal-temp" min="0" max="1" step="0.1" value="${settings.temp}"
+               style="width:100%;accent-color:#03C75A"
+               oninput="document.getElementById('temp-val').textContent=this.value">
+        <p style="color:#9ca3af;font-size:11px;margin-bottom:14px">0 = 일관적, 1 = 창의적</p>
+
+        <label style="font-weight:600;color:#374151;display:block;margin-bottom:4px">최대 토큰 수</label>
+        <select id="swal-tokens" class="swal2-input" style="margin:0;width:100%">
+          <option value="1024"  ${settings.maxTokens===1024?'selected':''}>1,024 (빠름)</option>
+          <option value="2048"  ${settings.maxTokens===2048?'selected':''}>2,048 (기본)</option>
+          <option value="4096"  ${settings.maxTokens===4096?'selected':''}>4,096 (길게)</option>
+          <option value="8192"  ${settings.maxTokens===8192?'selected':''}>8,192 (최대)</option>
+        </select>
+      </div>`,
+    confirmButtonText: '저장',
+    showCancelButton: true,
+    cancelButtonText: '취소',
+    focusConfirm: false,
+    preConfirm: () => ({
+      temp: parseFloat(document.getElementById('swal-temp').value),
+      maxTokens: parseInt(document.getElementById('swal-tokens').value)
+    })
+  });
+  if (value) {
+    settings = value;
+    localStorage.setItem('naver_settings', JSON.stringify(settings));
+    toast('설정이 저장되었습니다.', 'success');
+  }
+}
+
+/* ─── CONVERSATIONS ────────────────────────── */
+function saveConvs() {
+  localStorage.setItem('naver_convs', JSON.stringify(conversations));
+}
+
+function renderConvList() {
+  const el = document.getElementById('conv-list');
+  if (!conversations.length) {
+    el.innerHTML = `<p class="text-xs text-gray-400 text-center py-6">대화 내역이 없습니다</p>`;
+    return;
+  }
+  el.innerHTML = [...conversations].reverse().map(c => `
+    <div class="conv-item flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-pointer
+                text-sm text-gray-700 ${c.id === currentId ? 'active' : ''}"
+         onclick="loadConv('${c.id}')">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"
+           viewBox="0 0 24 24" class="shrink-0 text-gray-400">
+        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+      </svg>
+      <span class="truncate flex-1 text-[13px]">${escHtml(c.title)}</span>
+      <button class="del-btn text-gray-300 hover:text-red-400 transition-colors"
+              onclick="deleteConv(event,'${c.id}')" title="삭제">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"
+             viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>`).join('');
+}
+
+function newChat() {
+  currentId = null;
+  history   = [];
+  document.getElementById('msg-list').innerHTML = '';
+  document.getElementById('msg-list').classList.add('hidden');
+  document.getElementById('welcome-screen').classList.remove('hidden');
+  document.getElementById('chat-title').textContent = '새 대화';
+  document.getElementById('msg-count').textContent = '0';
+  renderConvList();
+  closeSidebar();
+  document.getElementById('user-input').focus();
+}
+
+function loadConv(id) {
+  const conv = conversations.find(c => c.id === id);
+  if (!conv) return;
+  currentId = id;
+  history   = conv.messages.map(m => ({ role: m.role, parts: [{ text: m.text }] }));
+  document.getElementById('chat-title').textContent = conv.title;
+  document.getElementById('msg-count').textContent  = conv.messages.length;
+
+  const msgList = document.getElementById('msg-list');
+  msgList.innerHTML = '';
+  conv.messages.forEach(m => renderBubble(m.role, m.text, false));
+  document.getElementById('welcome-screen').classList.add('hidden');
+  msgList.classList.remove('hidden');
+  scrollBottom();
+  renderConvList();
+  closeSidebar();
+}
+
+function deleteConv(e, id) {
+  e.stopPropagation();
+  conversations = conversations.filter(c => c.id !== id);
+  saveConvs();
+  if (currentId === id) newChat();
+  else renderConvList();
+  toast('대화가 삭제되었습니다.', 'info');
+}
+
+async function confirmClearAll() {
+  const { isConfirmed } = await Swal.fire({
+    title: '전체 대화 삭제',
+    text: '모든 대화 내역을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+    icon: 'warning',
+    confirmButtonText: '전체 삭제',
+    confirmButtonColor: '#ef4444',
+    showCancelButton: true,
+    cancelButtonText: '취소',
+  });
+  if (isConfirmed) {
+    conversations = [];
+    saveConvs();
+    newChat();
+    toast('전체 대화가 삭제되었습니다.', 'success');
+  }
+}
+
+/* ─── EXPORT ───────────────────────────────── */
+function exportChat() {
+  if (!currentId) { toast('내보낼 대화가 없습니다.', 'warning'); return; }
+  const conv = conversations.find(c => c.id === currentId);
+  if (!conv) return;
+  const text = conv.messages.map(m =>
+    `[${m.role === 'user' ? '나' : 'AI'}]\n${m.text}`
+  ).join('\n\n---\n\n');
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `NAVER_AI_Chat_${conv.title.slice(0, 20)}.txt`;
+  a.click();
+  toast('대화를 내보냈습니다.', 'success');
+}
+
+/* ─── SEND ─────────────────────────────────── */
+async function sendMessage() {
+  const ta   = document.getElementById('user-input');
+  const text = ta.value.trim();
+  if (!text || isLoading) return;
+
+  if (!apiKey) {
+    const { isConfirmed } = await Swal.fire({
+      title: 'API 키 필요',
+      text: 'Gemini API 키를 먼저 설정해야 합니다.',
+      icon: 'warning',
+      confirmButtonText: 'API 키 설정하기',
+      showCancelButton: true,
+      cancelButtonText: '닫기',
+    });
+    if (isConfirmed) showApiKeyModal();
+    return;
+  }
+
+  /* 새 대화 생성 */
+  if (!currentId) {
+    const conv = {
+      id: Date.now().toString(),
+      title: text.length > 28 ? text.slice(0, 28) + '…' : text,
+      messages: [],
+      createdAt: Date.now()
+    };
+    conversations.push(conv);
+    currentId = conv.id;
+    document.getElementById('chat-title').textContent = conv.title;
+    document.getElementById('welcome-screen').classList.add('hidden');
+    document.getElementById('msg-list').classList.remove('hidden');
+  }
+
+  /* UI reset */
+  ta.value = '';
+  ta.style.height = 'auto';
+  document.getElementById('char-count').textContent = '0';
+  document.getElementById('char-count').classList.add('hidden');
+
+  /* Add user message */
+  pushHistory('user', text);
+  renderBubble('user', text);
+  updateMsgCount();
+
+  /* Typing indicator */
+  const typingEl = addTyping();
+  isLoading = true;
+  document.getElementById('send-btn').disabled = true;
+
+  try {
+    /* ── Gemini API 호출 (Axios) ── */
+    const res = await axios.post(
+      GEMINI_ENDPOINT(apiKey),
+      {
+        contents: history,
+        generationConfig: {
+          temperature:     settings.temp,
+          maxOutputTokens: settings.maxTokens,
+        }
+      },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+
+    const reply = res.data.candidates[0].content.parts[0].text;
+
+    typingEl.remove();
+    pushHistory('model', reply);
+    renderBubble('model', reply);
+    updateMsgCount();
+
+  } catch (err) {
+    typingEl.remove();
+    /* 마지막 user 메시지 롤백 */
+    history.pop();
+    const conv = conversations.find(c => c.id === currentId);
+    if (conv) conv.messages.pop();
+
+    let msg = '알 수 없는 오류가 발생했습니다.';
+    if (err.response) {
+      const status = err.response.status;
+      const apiMsg = err.response.data?.error?.message || '';
+      if (status === 400) msg = `잘못된 요청: ${apiMsg || 'API 키 또는 요청 형식을 확인하세요.'}`;
+      else if (status === 403) msg = '인증 실패: API 키를 다시 확인해주세요.';
+      else if (status === 429) msg = '요청 한도 초과: 잠시 후 다시 시도해주세요.';
+      else if (status === 503) msg = 'Gemini 서버가 일시적으로 사용 불가합니다.';
+      else msg = `오류 ${status}: ${apiMsg}`;
+    } else if (err.request) {
+      msg = '네트워크 연결을 확인해주세요.';
+    }
+
+    await Swal.fire({
+      title: '⚠️ API 오류',
+      html: `<p style="font-size:14px;color:#374151">${msg}</p>`,
+      icon: 'error',
+      confirmButtonText: '확인',
+    });
+  } finally {
+    isLoading = false;
+    document.getElementById('send-btn').disabled = false;
+    saveConvs();
+    renderConvList();
+    ta.focus();
+  }
+}
+
+function sendSuggestion(text) {
+  document.getElementById('user-input').value = text;
+  document.getElementById('user-input').dispatchEvent(new Event('input'));
+  sendMessage();
+}
+
+/* ─── HISTORY ──────────────────────────────── */
+function pushHistory(role, text) {
+  history.push({ role, parts: [{ text }] });
+  const conv = conversations.find(c => c.id === currentId);
+  if (conv) conv.messages.push({ role, text, ts: new Date().toISOString() });
+}
+
+function updateMsgCount() {
+  const conv = conversations.find(c => c.id === currentId);
+  document.getElementById('msg-count').textContent = conv ? conv.messages.length : 0;
+}
+
+/* ─── RENDER BUBBLE ────────────────────────── */
+function renderBubble(role, text, doScroll = true) {
+  const isUser = role === 'user';
+  const msgList = document.getElementById('msg-list');
+  const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
+  const wrap = document.createElement('div');
+  wrap.className = `msg-in msg-group flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`;
+
+  /* Avatar */
+  const avatar = document.createElement('div');
+  avatar.className = isUser
+    ? 'w-8 h-8 rounded-xl bg-gray-200 flex items-center justify-center shrink-0 text-gray-600 text-xs font-bold self-end mb-5'
+    : 'w-8 h-8 rounded-xl naver-bar flex items-center justify-center shrink-0 text-white text-[11px] font-bold self-start';
+  avatar.textContent = isUser ? '나' : 'AI';
+
+  /* Content col */
+  const col = document.createElement('div');
+  col.className = `flex flex-col ${isUser ? 'items-end' : 'items-start'} gap-1 max-w-[80%] min-w-0`;
+
+  /* Bubble */
+  const bubble = document.createElement('div');
+  if (isUser) {
+    bubble.className = 'naver-bar text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm leading-relaxed shadow-sm break-words max-w-full';
+    bubble.textContent = text;
+  } else {
+    bubble.className = 'bg-white text-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed shadow-sm border border-gray-100 break-words max-w-full';
+    bubble.innerHTML = `<div class="md">${marked.parse(text)}</div>`;
+  }
+
+  /* Meta row */
+  const meta = document.createElement('div');
+  meta.className = 'flex items-center gap-2';
+  meta.innerHTML = `<span class="text-[11px] text-gray-400">${time}</span>`;
+
+  if (!isUser) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn flex items-center gap-1 text-[11px] text-gray-400 hover:text-naver transition-colors';
+    copyBtn.innerHTML = `<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+    </svg> 복사`;
+    copyBtn.onclick = () => copyText(copyBtn, text);
+    meta.appendChild(copyBtn);
+
+    const regenBtn = document.createElement('button');
+    regenBtn.className = 'copy-btn flex items-center gap-1 text-[11px] text-gray-400 hover:text-naver transition-colors';
+    regenBtn.innerHTML = `<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+    </svg> 재생성`;
+    regenBtn.onclick = () => regenerate();
+    meta.appendChild(regenBtn);
+  }
+
+  col.appendChild(bubble);
+  col.appendChild(meta);
+  wrap.appendChild(avatar);
+  wrap.appendChild(col);
+  msgList.appendChild(wrap);
+  if (doScroll) scrollBottom();
+}
+
+/* ─── TYPING ───────────────────────────────── */
+function addTyping() {
+  const msgList = document.getElementById('msg-list');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-in flex gap-3';
+  wrap.innerHTML = `
+    <div class="w-8 h-8 rounded-xl naver-bar flex items-center justify-center shrink-0 text-white text-[11px] font-bold">AI</div>
+    <div class="bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-gray-100">
+      <div class="flex items-center gap-1.5 h-5">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>
+    </div>`;
+  msgList.appendChild(wrap);
+  scrollBottom();
+  return wrap;
+}
+
+/* ─── REGENERATE ───────────────────────────── */
+async function regenerate() {
+  if (isLoading || !currentId) return;
+  const conv = conversations.find(c => c.id === currentId);
+  if (!conv || conv.messages.length < 2) return;
+
+  /* Pop last AI message */
+  conv.messages.pop();
+  history.pop();
+  /* Remove last bubble */
+  const msgList = document.getElementById('msg-list');
+  if (msgList.lastChild) msgList.lastChild.remove();
+
+  /* Re-send */
+  const typingEl = addTyping();
+  isLoading = true;
+  document.getElementById('send-btn').disabled = true;
+
+  try {
+    const res = await axios.post(
+      GEMINI_ENDPOINT(apiKey),
+      { contents: history, generationConfig: { temperature: settings.temp, maxOutputTokens: settings.maxTokens } },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    const reply = res.data.candidates[0].content.parts[0].text;
+    typingEl.remove();
+    pushHistory('model', reply);
+    renderBubble('model', reply);
+    updateMsgCount();
+  } catch (e) {
+    typingEl.remove();
+    toast('재생성에 실패했습니다.', 'error');
+  } finally {
+    isLoading = false;
+    document.getElementById('send-btn').disabled = false;
+    saveConvs();
+  }
+}
+
+/* ─── HELPERS ──────────────────────────────── */
+async function copyText(btn, text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const orig = btn.innerHTML;
+    btn.innerHTML = `<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> 복사됨!`;
+    btn.classList.add('text-naver');
+    setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('text-naver'); }, 2000);
+  } catch { toast('복사에 실패했습니다.', 'error'); }
+}
+
+function scrollBottom() {
+  const wrap = document.getElementById('messages-wrap');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, icon = 'info') {
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 2400,
+    timerProgressBar: true,
+    icon,
+    title: msg,
+    didOpen: t => {
+      t.addEventListener('mouseenter', Swal.stopTimer);
+      t.addEventListener('mouseleave', Swal.resumeTimer);
+    }
+  });
+}
+</script>
+
+</body>
+</html>

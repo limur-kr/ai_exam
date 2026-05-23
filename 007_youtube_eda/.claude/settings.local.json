@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"HTTP_STATUS:%{http_code}\" \"http://localhost:3000/dashboard/main\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP_STATUS:%{http_code}\" \"http://localhost:3000/dashboard/crawling\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP_STATUS:%{http_code}\" \"http://localhost:3000/dashboard/channel_list\")"
+    ]
+  }
+}
