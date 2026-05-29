@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Django
+db.sqlite3
+*.log
+
+# Environment variables
+.env
+
+# Vector DB (large binary files)
+011_rag/chroma_db_bge_m3/
+011_rag/chroma_db_bge_m3_table/
+011_rag/___old/chroma_db_huggingface/
+
+# PDF source files
+011_rag/source/
+
+# OS
+.DS_Store
+Thumbs.db
